@@ -138,29 +138,11 @@ resource "aws_instance" "myapp-server" {
   }
 }
 
-resource "aws_instance" "myapp-server-two" {
-  ami                         = data.aws_ami.latest-amazon-linux-image.id
-  instance_type               = var.instance_type
-  key_name                    = aws_key_pair.ssh-key.key_name
-  subnet_id                   = aws_subnet.myapp-subnet-1.id
-  vpc_security_group_ids      = [aws_default_security_group.default-sg.id]
-  availability_zone           = var.availability_zone
-  associate_public_ip_address = true
-  user_data                   = file("entry-script.sh")
-  tags = {
-    Name = "${var.env_prefix}-server"
-  }
-}
-
 output "aws_ami_id" {
   value = data.aws_ami.latest-amazon-linux-image.id
 
 }
 output "ec2_public_ip" {
   value = aws_instance.myapp-server.public_ip
-
-}
-output "second_ec2_public_ip" {
-  value = aws_instance.myapp-server-two.public_ip
 
 }
