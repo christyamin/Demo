@@ -1,52 +1,3 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "4.53.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = "us-east-1"
-}
-
-variable "vpc_cidr_block" {
-  description = "vpc cidr block"
-  default     = "10.0.0.0/16"
-}
-
-variable "subnet_cidr_block" {
-  description = "subnet cidr block"
-  default     = "10.0.10.0/24"
-}
-
-variable "availability_zone" {
-  description = "name of availability zone"
-  default     = "us-east-1a"
-}
-
-variable "env_prefix" {
-  description = "name of environment"
-  default     = "dev"
-}
-variable "instance_type" {
-  description = "name of instance type"
-  default     = "t2.micro"
-}
-variable "public_key_location" {
-  description = "name of public key"
-  default     = "C:/Users/USER/.ssh/id_rsa.pub"
-}
-variable "private_key_location" {
-  description = "name of private key"
-  default     = "C:/Users/USER/.ssh/id_rsa"
-}
-variable "my_ip" {
-  description = "name of ip address"
-  default     = "80.89.77.167/32"
-}
-
 resource "aws_vpc" "myapp-vpc" {
   cidr_block = var.vpc_cidr_block
   tags = {
@@ -54,116 +5,43 @@ resource "aws_vpc" "myapp-vpc" {
   }
 }
 
-resource "aws_subnet" "myapp-subnet-1" {
-  vpc_id            = aws_vpc.myapp-vpc.id
-  cidr_block        = var.subnet_cidr_block
-  availability_zone = var.availability_zone
-  tags = {
-    Name = "${var.env_prefix}-subnet-1"
-  }
-}
-
-resource "aws_internet_gateway" "myapp-igw" {
-  vpc_id = aws_vpc.myapp-vpc.id
-
-  tags = {
-    Name = "${var.env_prefix}-igw"
-  }
-}
-
-resource "aws_default_route_table" "main-rtb" {
+module "myapp-subnet" {
+  source                 = "./modules/subnet"
+  subnet_cidr_block      = var.subnet_cidr_block
+  availability_zone      = var.availability_zone
+  env_prefix             = var.env_prefix
+  my_ip                  = var.my_ip
+  vpc_id                 = aws_vpc.myapp-vpc.id
   default_route_table_id = aws_vpc.myapp-vpc.default_route_table_id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.myapp-igw.id
-  }
-
-  tags = {
-    Name = "${var.env_prefix}-main-rtb"
-  }
+}
+module "myapp-security-group" {
+  source     = "./modules/security_group"
+  env_prefix = var.env_prefix
+  my_ip      = var.my_ip
+  vpc_id     = aws_vpc.myapp-vpc.id
+}
+module "myapp-server_1" {
+  source                    = "./modules/webserver"
+  availability_zone         = var.availability_zone
+  env_prefix                = var.env_prefix
+  my_ip                     = var.my_ip
+  instance_type             = var.instance_type
+  vpc_id                    = aws_vpc.myapp-vpc.id
+  subnet_id                 = module.myapp-subnet.subnet.id
+  public_key_location       = var.public_key_location
+  default_security_group_id = module.myapp-security-group.security_group.id
+  key_name                  = var.key_name_1
 }
 
-resource "aws_default_security_group" "default-sg" {
-  vpc_id = aws_vpc.myapp-vpc.id
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.my_ip]
-  }
-  ingress {
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  tags = {
-    Name = "${var.env_prefix}-default-sg"
-  }
-}
-data "aws_ami" "latest-amazon-linux-image" {
-  most_recent = true
-  owners      = ["amazon"]
-
-  filter {
-    name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
-}
-
-resource "aws_key_pair" "ssh-key" {
-  key_name   = "server-key"
-  public_key = file(var.public_key_location)
-}
-
-resource "aws_instance" "myapp-server" {
-  ami                         = data.aws_ami.latest-amazon-linux-image.id
-  instance_type               = var.instance_type
-  key_name                    = aws_key_pair.ssh-key.key_name
-  subnet_id                   = aws_subnet.myapp-subnet-1.id
-  vpc_security_group_ids      = [aws_default_security_group.default-sg.id]
-  availability_zone           = var.availability_zone
-  associate_public_ip_address = true
-  connection {
-    type        = "ssh"
-    host        = self.public_ip
-    user        = "ec2-user"
-    private_key = file(var.private_key_location)
-  }
-
-  provisioner "file" {
-    source      = "entry-script.sh"
-    destination = "/home/ec2-user/entry-script.sh"
-  }
-  provisioner "remote-exec" {
-    inline = ["bash entry-script.sh"]
-  }
-  provisioner "local-exec" {
-    command = "echo ${self.public_ip} > output.txt"
-
-  }
-  tags = {
-    Name = "${var.env_prefix}-server"
-  }
-}
-
-output "aws_ami_id" {
-  value = data.aws_ami.latest-amazon-linux-image.id
-
-}
-output "ec2_public_ip" {
-  value = aws_instance.myapp-server.public_ip
-
+module "myapp-server_2" {
+  source                    = "./modules/webserver"
+  availability_zone         = var.availability_zone
+  env_prefix                = var.env_prefix
+  my_ip                     = var.my_ip
+  instance_type             = var.instance_type
+  vpc_id                    = aws_vpc.myapp-vpc.id
+  subnet_id                 = module.myapp-subnet.subnet.id
+  public_key_location       = var.public_key_location
+  default_security_group_id = module.myapp-security-group.security_group.id
+  key_name                  = var.key_name_2
 }
